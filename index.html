@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>極簡抽獎程式</title>
+    <style>
+        /* 現代簡約風格設定 */
+        :root {
+            --primary-color: #2c3e50;
+            --accent-color: #e74c3c;
+            --bg-color: #f8f9fa;
+            --card-bg: #ffffff;
+            --text-color: #333333;
+        }
+
+        body {
+            font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, 'Helvetica Neue', sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+        }
+
+        .container {
+            background-color: var(--card-bg);
+            width: 90%;
+            max-width: 500px;
+            padding: 40px;
+            border-radius: 20px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+            text-align: center;
+            transition: all 0.3s ease;
+        }
+
+        h1 {
+            margin-top: 0;
+            color: var(--primary-color);
+            font-weight: 600;
+        }
+
+        textarea {
+            width: 100%;
+            height: 180px;
+            border: 1px solid #e0e0e0;
+            border-radius: 12px;
+            padding: 15px;
+            font-size: 16px;
+            font-family: inherit;
+            resize: none;
+            box-sizing: border-box;
+            margin-bottom: 20px;
+            transition: border-color 0.3s;
+        }
+
+        textarea:focus {
+            outline: none;
+            border-color: var(--primary-color);
+        }
+
+        button {
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            padding: 14px 28px;
+            font-size: 16px;
+            font-weight: bold;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: background-color 0.2s, transform 0.1s;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        button:hover {
+            background-color: #1a252f;
+        }
+
+        button:active {
+            transform: scale(0.98);
+        }
+
+        .btn-outline {
+            background-color: transparent;
+            color: var(--primary-color);
+            border: 2px solid var(--primary-color);
+            margin-top: 15px;
+        }
+
+        .btn-outline:hover {
+            background-color: var(--primary-color);
+            color: white;
+        }
+
+        .btn-danger {
+            background-color: var(--accent-color);
+            margin-top: 15px;
+        }
+
+        .btn-danger:hover {
+            background-color: #c0392b;
+        }
+
+        /* 抽獎區塊隱藏設定 */
+        #draw-section {
+            display: none;
+        }
+
+        /* 顯示名字的區域 */
+        .name-display {
+            font-size: 48px;
+            font-weight: bold;
+            height: 120px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin: 20px 0;
+            color: var(--primary-color);
+            overflow: hidden;
+        }
+
+        /* 中獎時的特效 */
+        .winner-effect {
+            color: var(--accent-color);
+            font-size: 56px;
+            animation: pop 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275) both;
+        }
+
+        @keyframes pop {
+            0% { transform: scale(0.5); opacity: 0; }
+            80% { transform: scale(1.1); }
+            100% { transform: scale(1); opacity: 1; }
+        }
+
+        .info-text {
+            font-size: 14px;
+            color: #7f8c8d;
+            margin-top: -10px;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container" id="input-section">
+        <h1>幸運抽獎</h1>
+        <p class="info-text">輸入參與者名單（一行一個名字），程式會自動去除重複項目。</p>
+        <textarea id="names-input" placeholder="小明&#10;小華&#10;阿強..."></textarea>
+        <button onclick="prepareDraw()">匯入名單並準備抽獎</button>
+    </div>
+
+    <div class="container" id="draw-section">
+        <h1 id="draw-title">準備抽出幸運兒</h1>
+        <div class="name-display" id="name-display">???</div>
+        
+        <!-- 抽獎按鈕 -->
+        <button id="start-draw-btn" onclick="startDraw()">開始抽獎</button>
+        
+        <!-- 重抽與重新設定按鈕 (預設隱藏) -->
+        <button id="redraw-btn" class="btn-danger" style="display: none;" onclick="redraw()">不符資格，剔除並重抽</button>
+        <button id="reset-btn" class="btn-outline" style="display: none;" onclick="resetApp()">重新匯入名單</button>
+    </div>
+
+    <!-- 鼓聲音效 (引用 Google 提供的免費開源音效) -->
+    <audio id="drum-audio" src="https://actions.google.com/sounds/v1/foley/drum_roll.ogg" preload="auto"></audio>
+
+    <script>
+        let participants = [];
+        let currentWinnerIndex = -1;
+        let drawInterval;
+        let isDrawing = false;
+
+        const inputSection = document.getElementById('input-section');
+        const drawSection = document.getElementById('draw-section');
+        const namesInput = document.getElementById('names-input');
+        const nameDisplay = document.getElementById('name-display');
+        const startDrawBtn = document.getElementById('start-draw-btn');
+        const redrawBtn = document.getElementById('redraw-btn');
+        const resetBtn = document.getElementById('reset-btn');
+        const drawTitle = document.getElementById('draw-title');
+        const drumAudio = document.getElementById('drum-audio');
+
+        // 步驟 1：處理名單並進入抽獎畫面
+        function prepareDraw() {
+            const rawText = namesInput.value;
+            // 根據換行符號切割，去除前後空白，並過濾掉空行
+            const lines = rawText.split('\n').map(name => name.trim()).filter(name => name !== '');
+            
+            // 使用 Set 自動去除重複的名字
+            participants = [...new Set(lines)];
+
+            if (participants.length === 0) {
+                alert('請至少輸入一個名字！');
+                return;
+            }
+
+            // 切換畫面
+            inputSection.style.display = 'none';
+            drawSection.style.display = 'block';
+            resetUI();
+        }
+
+        // 步驟 2：開始抽獎動畫
+        function startDraw() {
+            if (isDrawing || participants.length === 0) {
+                if (participants.length === 0) alert('名單內已經沒有人囉！');
+                return;
+            }
+
+            isDrawing = true;
+            startDrawBtn.style.display = 'none';
+            redrawBtn.style.display = 'none';
+            resetBtn.style.display = 'none';
+            nameDisplay.classList.remove('winner-effect');
+            drawTitle.innerText = '抽獎中...';
+
+            // 播放鼓聲
+            drumAudio.currentTime = 0;
+            drumAudio.play().catch(e => console.log('瀏覽器阻擋自動播放音效', e));
+
+            // 跑馬燈動畫
+            let speed = 50; // 初始切換速度
+            let ticks = 0;
+            const maxTicks = 40; // 總共跳動的次數 (約兩秒多)
+
+            drawInterval = setInterval(() => {
+                const randomIdx = Math.floor(Math.random() * participants.length);
+                nameDisplay.innerText = participants[randomIdx];
+                ticks++;
+
+                // 逐漸減速的效果 (選項)
+                if (ticks >= maxTicks) {
+                    clearInterval(drawInterval);
+                    finishDraw();
+                }
+            }, speed);
+        }
+
+        // 步驟 3：抽出結果
+        function finishDraw() {
+            // 決定最終得主
+            currentWinnerIndex = Math.floor(Math.random() * participants.length);
+            nameDisplay.innerText = participants[currentWinnerIndex];
+            
+            // 加上中獎特效與文字
+            nameDisplay.classList.add('winner-effect');
+            drawTitle.innerText = '🎉 恭喜幸運得主 🎉';
+            
+            // 停止鼓聲
+            drumAudio.pause();
+            
+            isDrawing = false;
+            
+            // 顯示控制按鈕
+            redrawBtn.style.display = 'block';
+            resetBtn.style.display = 'block';
+        }
+
+        // 步驟 4：不符資格，剔除並重抽
+        function redraw() {
+            if (currentWinnerIndex !== -1) {
+                // 將上一位得主從陣列中刪除
+                participants.splice(currentWinnerIndex, 1);
+                currentWinnerIndex = -1;
+            }
+
+            if (participants.length === 0) {
+                alert('名單內已經沒有其他人可以抽囉！');
+                resetApp();
+                return;
+            }
+
+            // 直接開始下一次抽獎
+            startDraw();
+        }
+
+        // 回到初始畫面
+        function resetApp() {
+            inputSection.style.display = 'block';
+            drawSection.style.display = 'none';
+            drumAudio.pause();
+        }
+
+        // 重置抽獎區塊的 UI
+        function resetUI() {
+            nameDisplay.innerText = '???';
+            nameDisplay.classList.remove('winner-effect');
+            drawTitle.innerText = `準備抽出幸運兒 (共 ${participants.length} 人)`;
+            startDrawBtn.style.display = 'block';
+            redrawBtn.style.display = 'none';
+            resetBtn.style.display = 'none';
+        }
+    </script>
+</body>
+</html>
